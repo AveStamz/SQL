@@ -1,0 +1,66 @@
+WITH ttRBills AS (
+    SELECT
+        bc.bID,
+        MAX(RetailPacks.UpTo) AS max_end_date
+    FROM
+        BillContent bc
+        JOIN RetailPacks ON bc.bcID = RetailPacks.bcID
+    WHERE
+        bc.Product = N'Контур-Экстерн'
+        AND RetailPacks.Since <= '2021-01-01'
+        AND RetailPacks.UpTo >= '2021-01-01'
+    GROUP BY
+        bc.bID
+),
+ttMaxPBill AS (
+    SELECT
+        bc.bID,
+        MAX(Bills.PayDate) AS max_pay_date
+    FROM
+        BillContent bc
+        JOIN Bills ON bc.bID = Bills.bID
+    WHERE
+        bc.Product = N'Контур-Экстерн'
+        AND (bc.TypeID = 1 OR bc.TypeID = 2)
+        AND bc.bID NOT IN (SELECT bID FROM ttRBills)
+    GROUP BY
+        bc.bID
+),
+ttSelectBills AS (
+    SELECT
+        Clients.cID,
+        Clients.Name AS Name,
+        Clients.Inn AS Inn,
+        COALESCE(tt_rb.bID, tt_mpb.bID) AS Номер_счета,
+        Bills.Num AS Num,
+        Bills.BDate AS BDate,
+        Bills.PayDate AS PayDate,
+        COALESCE(tt_rb.max_end_date, tt_mpb.max_pay_date) AS prior_date,
+        ROW_NUMBER() OVER (PARTITION BY Clients.cID ORDER BY COALESCE(tt_rb.max_end_date, '1900-01-01') DESC, COALESCE(tt_mpb.max_pay_date, '1900-01-01') DESC) AS row_num
+    FROM
+        Clients
+        JOIN Bills ON Clients.cID = Bills.cID
+        LEFT JOIN ttRBills tt_rb ON Bills.bID = tt_rb.bID
+        LEFT JOIN ttMaxPBill tt_mpb ON Bills.bID = tt_mpb.bID
+    WHERE
+        EXISTS (SELECT 1 FROM BillContent WHERE Bills.bID = BillContent.bID AND BillContent.Product = N'Контур-Экстерн')
+)
+SELECT
+    tt_sb.Name,
+    tt_sb.Inn,
+    tt_sb.Num,
+    tt_sb.BDate,
+    tt_sb.PayDate,
+    SUM(BillContent.Cost) AS BillSum,
+    SUM(BillContent.Paid) AS BillPay
+FROM
+    ttSelectBills tt_sb
+    JOIN BillContent ON tt_sb.Номер_счета = BillContent.bID
+WHERE
+    tt_sb.row_num = 1
+GROUP BY
+    tt_sb.Name,
+    tt_sb.Inn,
+    tt_sb.Num,
+    tt_sb.BDate,
+    tt_sb.PayDate
