@@ -1,0 +1,113 @@
+строку в табличный вид
+
+select cast(substring(row,1,12) as date) dt,
+cast(substring(row,14,10) as time) tm,
+cast(substring(row,25,5) as int) id,
+cast(substring(row,31,16) as varchar(255)) order_type,
+cast(substring(row,48,24) as varchar(255)) product_category,
+cast(substring(row,73,37) as varchar(255)) product,
+cast(substring(row,111,11) as varchar(255)) manufacturer,
+cast(substring(row,123,6) as int) cnt,
+cast(substring(row,130,7) as float) price,
+try_cast(substring(row,138,7) as float) selling_price
+from invoice_order_raw
+
+добавление в справочники новых значений
+
+insert product(product_id,product)
+select rnp.row_number + maxid.max_id product_id, product
+from (SELECT ROW_NUMBER() OVER (ORDER BY product) AS row_number, product from
+(select distinct(product) from
+(select cast(substring(row,73,37) as varchar(255)) product
+from invoice_order_raw) t1
+EXCEPT 
+SELECT product FROM product) t2) rnp
+cross join
+(SELECT MAX(product_id) AS max_id FROM product) maxid;
+select * from product
+
+insert product_category(product_category_id,product_category)
+select rnpc.row_number + maxid.max_id product_category_id, product_category
+from (SELECT ROW_NUMBER() OVER (ORDER BY product_category) AS row_number, product_category from
+(select distinct(product_category) from
+(select cast(substring(row,48,24) as varchar(255)) product_category
+from invoice_order_raw) t1
+EXCEPT 
+SELECT product_category FROM product_category) t2) rnpc
+cross join
+(SELECT MAX(product_category_id) AS max_id FROM product_category) maxid;
+select * from product_category
+
+insert manufacturer(manufacturer_id,manufacturer)
+select rnm.row_number + maxid.max_id manufacturer_id, manufacturer
+from (SELECT ROW_NUMBER() OVER (ORDER BY manufacturer) AS row_number, manufacturer from
+(select distinct(manufacturer) from
+(select cast(substring(row,111,11) as varchar(255)) manufacturer
+from invoice_order_raw) t1
+EXCEPT 
+SELECT manufacturer FROM manufacturer) t2) rnm
+cross join
+(SELECT MAX(manufacturer_id) AS max_id FROM manufacturer) maxid;
+select * from manufacturer
+
+Заполняем таблицу обновлёнными справочниками
+
+create table operations_data_raw
+    (dt date,
+tm time,
+order_number int,
+order_type_id int,
+product_category_id int,
+product_id int,
+manufacturer_id int,
+cnt int,
+price float,
+selling_price float
+    );
+insert into operations_data_raw
+select dt,tm,order_number,
+ot.order_type_id,
+pc.product_category_id,
+p.product_id,
+m.manufacturer_id,
+cnt,price,selling_price from (select cast(substring(row,1,12) as date) dt,
+cast(substring(row,14,10) as time) tm,
+cast(substring(row,25,5) as int) order_number,
+cast(substring(row,31,16) as varchar(255)) order_type,
+cast(substring(row,48,24) as varchar(255)) product_category,
+cast(substring(row,73,37) as varchar(255)) product,
+cast(substring(row,111,11) as varchar(255)) manufacturer,
+cast(substring(row,123,6) as int) cnt,
+cast(substring(row,130,7) as float) price,
+try_cast(substring(row,138,7) as float) selling_price
+from invoice_order_raw) i
+left join order_type ot on i.order_type=ot.order_type
+left join product_category pc on i.product_category=pc.product_category
+left join product p on i.product=p.product
+left join manufacturer m on i.manufacturer=m.manufacturer
+
+Добавляем в исходную таблицу новые данные
+
+insert into operations_data
+select dt,tm,order_number,
+order_type_id,
+product_category_id,
+product_id,
+manufacturer_id,
+cnt,price,selling_price
+from operations_data_raw
+
+Рассчитываем показатели
+
+select count(*) count from operations_data;
+select product_category_id, count(*) count from operations_data
+group by product_category_id;
+select manufacturer_id, count(*) count from operations_data
+group by manufacturer_id;
+select max(cnt) max_cnt, min(cnt) min_cnt, avg(cnt) avg_cnt from operations_data;
+select max(price) max_price, min(price) min_price, round(avg(price),2) avg_price
+from operations_data
+
+Ссылка на онлайн среду: https://dbfiddle.uk/8BgDnFkp?hide=1024
+
+
