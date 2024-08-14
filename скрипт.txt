@@ -1,0 +1,59 @@
+import pandas as pd
+import sqlite3
+import re
+
+fpath = 'C:\\Users\\user\\Documents\\'
+
+select = """
+select
+    case
+        when substring(fio, length(fio), 1) = 'ч'
+        then 'Мужчины'
+        else 'Женщины'
+    end as "Пол",
+    count(*) as "Количество пользователей"
+from pre_orders
+group by 1
+"""
+
+with sqlite3.connect(fpath + 'Paratype.db') as con:
+    pre_orders = pd.read_sql_query(select, con)
+
+read_mail = pd.read_csv(fpath + 'email_rcv.csv')
+
+def gender(s):
+    results = re.search(r'(a|v)\d{2}@', s)
+    if results is None:
+        return 'Not Found'
+    if results[1] == 'a':
+        gender = 'Женщины'
+    else:
+        gender = 'Мужчины'
+    return gender
+
+read_mail['Пол'] = read_mail.apply(lambda x: gender(x['email']), axis = 1)
+
+read_mail2 = read_mail[read_mail['Пол'].isin(['Женщины', 'Мужчины'])].groupby(by = ['Пол']).count().reset_index()
+
+read_mail2.rename(columns = {'email':'Количество пользователей'}, inplace = True)
+
+select = """
+select
+    case
+        when substring(fio, length(fio), 1) = 'ч'
+        then 'Мужчины'
+        else 'Женщины'
+    end as "Пол",
+    count(*) as "Количество пользователей"
+from (select fio from payments p left join pre_orders po on p.phone = po.phone)
+group by 1
+"""
+
+with sqlite3.connect(fpath + 'Paratype.db') as con:
+    buy = pd.read_sql_query(select, con)
+
+pre_orders.insert(1, 'Метрика', 'Сделали предзаказ')
+read_mail2.insert(1, 'Метрика', 'Прочитали письмо')
+buy.insert(1, 'Метрика', 'Купили игру')
+
+result = pd.concat([pre_orders, read_mail2, buy]).set_index('Пол')
